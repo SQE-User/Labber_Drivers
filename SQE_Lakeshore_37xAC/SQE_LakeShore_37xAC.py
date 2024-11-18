@@ -15,24 +15,14 @@ class Driver(VISA_Driver):
         
     def performOpen(self, options={}):
         """Perform the operation of opening the instrument connection"""
-        self.heater_ranges = {option: str(n) for n, option in enumerate(['Off', '31.6 uA', '100 uA', '316 uA', '1.00 mA', '3.16 mA', '10.0 mA', '31.6 mA', '100 mA'])}
-        # starting_trigger_quant_values = {'1': np.nan, '2': np.nan, '3': np.nan, '4': np.nan}
-        # self.memory = {}
-        # for channel in ('1', '2', '3', '4', '5', '6', '7', '8'):
-        #     for quant in ('Temperature ', 'Resistance ', 'Excitation Power ' ):
-        #         self.memory[quant+channel] = starting_trigger_quant_values
+        self.isInKelvin = np.full(16, False)
+        self.isInWatts = {'Sample': False, 'Warm-up': False, 'Still': False}
+        self.heaters = {'Sample': '0', 'Warm-up': '1', 'Still': '2'}
 
         try:
            # start by calling the generic VISA open to make sure we have a connection
            VISA_Driver.performOpen(self, options=options)
-        #    msg = self.askAndLog('INTYPE?')
-        #    pieces = msg.split(',')
-        #    if '2' in pieces[-1]:
-        #        self.log('The 1 at the end of the input type means that the preferred units are ohms')
-        #        pieces[-1] = pieces[-1].replace('2', '1')
-        #        self.writeAndLog(pieces.join(','))
-        #        self.log('Preferred units have been set to kelvins')
-           
+
         except Error as e:
             # re-cast errors as a generic communication error
             msg = str(e)
@@ -54,6 +44,20 @@ class Driver(VISA_Driver):
                 if name == 'Show Ch':
                     #This control is makes the submenu visible in instrument server, no instrument communication
                     return value
+                
+                elif name == 'Sensor Name':
+                    sCmd = 'INNAME "%s"' %(value)
+                    self.writeAndLog(sCmd)
+                    self.log('Command sent: ' + sCmd)
+                    return value
+                
+                # elif name == 'Preferred Units':
+                #     cfgCmd = 'INTYPE? %s' %(str(dConfigChannel))
+                #     cfgVals = self.askAndLog(cfgCmd).split(',')
+                #     cfgVals[-1] = '1' if value == 'K' else '2'
+                #     sCmd = 'INTYPE %s,%s' %(str(dConfigChannel), ','.join(cfgVals))
+                #     self.writeAndLog(sCmd)
+                #     return value
 
                 elif name in ('Excitation Mode', 'Autorange', 'Resistance Range',
                               'Voltage Range', 'Current Range'):
@@ -140,39 +144,77 @@ class Driver(VISA_Driver):
                     pass
                 return value
 
-            elif quant.name in ('P - Proportional', 'I - Integral', 'D - Derivative'):
-                dP = self.getValue('P - Proportional')
-                dI = self.getValue('I - Integral')
-                dD= self.getValue('D - Derivative')
-                sCmd = 'PID %s,%s,%s' %(str(dP), str(dI), str(dD))
-                self.writeAndLog(sCmd)
-                self.log('Command sent: ' + sCmd)
-                return value
+            elif 'Heater' in quant.name:
+                heaterName, name = quant.name.split(' Heater ')
+                self.log(f'{heaterName}, {name}')
+
+                if name in ('Input Channel', 'Temperature Control Mode',):
+                    sOutputStatus = self.askAndLog('OUTMODE? %s' %(self.heaters[heaterName]))
+                    sOutputList = sOutputStatus.split(',')
+                    if name == 'Input channel':
+                        sOutputList[1] = value
+                        sCmd = 'OUTMODE ' + self.heaters[heaterName] + ',' + ','.join(sOutputList)
+                        self.writeAndLog(sCmd)
+                        self.log('Command sent: ' + sCmd)
+                    if name == 'Temperature Control Mode':
+                        if value == 'Closed loop (PID)':
+                            sOutputList[0] = '5'
+                        elif value == 'Open loop (Manual)':
+                            sOutputList[0] = '2'
+                        else: 
+                            sOutputList[0] = '0'
+                        sCmd = 'OUTMODE ' + self.heaters[heaterName] + ',' + ','.join(sOutputList)
+                        self.writeAndLog(sCmd)
+                        self.log('Command sent: ' + sCmd)
+                    return value
+
+                elif name in ('Temperature Ramp','Temperature Ramp Rate'):
+                    dTempRamp = int(self.getValueIndex(heaterName+' Heater Temperature Ramp'))
+                    dTempRampRate = float(self.getValue(heaterName+' Heater Temperature Ramp Rate'))
+                    sCmd = 'RAMP %s,%s,%s' %(self.heaters[heaterName], str(dTempRamp), str(dTempRampRate))
+                    self.writeAndLog(sCmd)
+                    self.log('Command sent: ' + sCmd)
+                    return value
+
+                if name in ('P - Proportional', 'I - Integral', 'D - Derivative'):
+                    dP = self.getValue(heaterName+' Heater P - Proportional')
+                    dI = self.getValue(heaterName+' Heater I - Integral')
+                    dD= self.getValue(heaterName+' Heater D - Derivative')
+                    sCmd = 'PID %s,%s,%s,%s' %(self.heaters[heaterName], str(dP), str(dI), str(dD))
+                    self.writeAndLog(sCmd)
+                    self.log('Command sent: ' + sCmd)
+                    return value
               
-            elif quant.name in ('Temperature Ramp','Temperature Ramp Rate'):
-                dTempRamp = self.getValueIndex('Temperature Ramp')
-                dTempRampRate = float(self.getValue('Temperature Ramp Rate'))
-                sCmd = 'RAMP %s,%s' %(str(dTempRamp), str(dTempRampRate))
-                self.writeAndLog(sCmd)
-                self.log('Command sent: ' + sCmd)
-                return value
+                # elif name in ('Resistance'):
+                #     sCmd = self.askAndLog('HTRSET? %s' %(self.heaters[heaterName])).split(',')
+                #     sCmd[0] = str(value)
+                #     self.writeAndLog('HTRSET %s, ' %(self.heaters[heaterName]) +','.join(sCmd))
+                #     return value
             
-            elif quant.name in ('Heater Resistance'):
-                sCmd = self.askAndLog('HTRSET? 0').split(',')
-                sCmd[0] = str(value)
-                self.writeAndLog('HTRSET 0,' +','.join(sCmd))
-                return value
+                elif name in ('Power Range'):
+                    if heaterName == 'Sample':
+                        heater_ranges = {option: str(n) for n, option in enumerate(['Off', '100 nW', '1 uW', '10 uW', '100 uW', '1 mW', '10 mW', '100 mW', '1 W'])}
+                        sCmd = 'RANGE 0, %s' %(heater_ranges[value])
+                    else:
+                        sCmd = 'RANGE %s, %s' %(self.heaters[heaterName], str(int(value)))
+                    self.writeAndLog(sCmd)
+                    self.log('Command sent: ' + sCmd)
+                    return value
             
-            elif quant.name in ('Heater Range'):
-                sCmd = 'RANGE 0, %s' %(self.heater_ranges[value])
-                self.writeAndLog(sCmd)
-                self.log('Command sent: ' + sCmd)
-                return value
-            
-            elif quant.name in ('Temperature Setpoint'):
-                self.log(f'Setting point to {value}')
-                self.writeAndLog(f'SETP {value}')
-                return value
+                elif name in ('Temperature Setpoint'):
+                    inputChannel = int(self.readValueFromOther(heaterName + ' Heater Input Channel'))
+                    self.setInKelvin(inputChannel)
+                    sCmd = 'SETP %s, %s' %(self.heaters[heaterName], str(value))
+                    self.writeAndLog(sCmd)
+                    self.log('Command sent: ' + sCmd)
+                    return value
+                
+                elif name in ('Manual Output Power'):
+                    self.setInWatts(heaterName)
+                    sCmd = 'MOUT %s,%s' %(self.heaters[heaterName], str(value))
+                    self.writeAndLog(sCmd)
+                    return value
+
 
             else:
                 # for all other quantities, call the generic VISA driver
@@ -200,6 +242,16 @@ class Driver(VISA_Driver):
                 if name == 'Show Ch':
                     #This control is makes the submenu visible in instrument server, no instrument communication
                     return value
+                
+                elif name == 'Sensor Name':
+                    sCmd = 'INNAME? %s' % str(channel)
+                    value = self.askAndLog(sCmd)
+                    return value
+                
+                # elif name == 'Preferred Units':
+                #     sCmd = 'INTYPE? %s' %(str(channel))
+                #     value = int(self.askAndLog(sCmd).split(',')[-1])
+                #     return value
 
                 elif name in ('Excitation Mode', 'Autorange', 'Resistance Range', 
                              'Voltage Range', 'Current Range'):
@@ -389,66 +441,106 @@ class Driver(VISA_Driver):
                     if quant.name == 'Temperature Coefficient (upload)':
                         value = int(listCurveStatus[4])
                 return value
-
-            elif quant.name in ('Temperature Ramp','Temperature Ramp Rate'):
-                sRampStatus = self.askAndLog('RAMP?')
-                listRampStatus = sRampStatus.split(',')
-                if quant.name == 'Temperature Ramp':
-                    value = int(listRampStatus[0])
-                elif quant.name == 'Temperature Ramp Rate':
-                    value = float(listRampStatus[1])
-                return value
-           
-            elif quant.name in ('P - Proportional', 'I - Integral', 'D - Derivative'):
-                sPIDStatus = self.askAndLog('PID?')
-                listPIDStatus = sPIDStatus.split(',')
-                if quant.name == 'P - Proportional':
-                    value = float(listPIDStatus[0])
-                elif quant.name == 'I - Integral':
-                    value = float(listPIDStatus[1])
-                elif quant.name == 'D - Derivative':
-                    value = float(listPIDStatus[2])
-                return value
-
-            elif quant.name in ('Temperature Setpoint'):
-                self.log(f'Asking set point')
-                self.askAndLog(f'SETP?')
-                return value
             
-            elif quant.name in ('Heater Resistance'):
-                value = float(self.askAndLog('HTRSET? 0').split(',')[0])
-                return value
-            
-            elif quant.name in ('Heater Range'):
-                msg = int(self.askAndLog('RANGE? 0'))
-                for num, val in self.heater_ranges.items():
-                    if num == msg:
-                        value = val
-                        break
+            elif 'Heater' in quant.name:
+                heaterName, name = quant.name.split(' Heater ')
                 
-                return value
+                self.log(f'{heaterName}, {name}')
 
-            elif quant.name in ('Heater Output'):
-                sCmd = 'HTR?'
-                value = float(self.askAndLog(sCmd))
-                self.log('Command sent: ' + sCmd)
-                resistance = self.getValue('Heater Resistance')
-                heat_range = self.getValue('Heater Range')
-                if heat_range == 'Off':
-                    max_heat = 1
-                else:
-                    num_val = float(heat_range.split(' ')[0])
-                    unit = heat_range.split(' ')[1]
-                    factor = 1e-3 if unit == 'mA' else 1e-6
-                    max_heat = resistance * (num_val * factor)**2
-                # self.log(resistance, max_heat, value)
-                value = value * max_heat / 100
-                return value
+                if name in ('Input Channel', 'Temperature Control Mode'):
+                    sOutputStatus = self.askAndLog('OUTMODE? %s' %(self.heaters[heaterName]))
+                    sOutputList = sOutputStatus.split(',')
+                    if name == 'Input channel':
+                        value = sOutputList[1]
+                    elif name == 'Temperature Control Mode':
+                        value = sOutputList[0]
+                    return value
+
+
+                elif name in ('Temperature Ramp','Temperature Ramp Rate'):
+                    sRampStatus = self.askAndLog('RAMP? %s' %(self.heaters[heaterName]))
+                    listRampStatus = sRampStatus.split(',')
+                    if name == 'Temperature Ramp':
+                        value = int(listRampStatus[0])
+                    elif name == 'Temperature Ramp Rate':
+                        value = float(listRampStatus[1])
+                    return value
+           
+                elif name in ('P - Proportional', 'I - Integral', 'D - Derivative'):
+                    sPIDStatus = self.askAndLog('PID? %s' %(self.heaters[heaterName]))
+                    listPIDStatus = sPIDStatus.split(',')
+                    if quant.name == 'P - Proportional':
+                        value = float(listPIDStatus[0])
+                    elif quant.name == 'I - Integral':
+                        value = float(listPIDStatus[1])
+                    elif quant.name == 'D - Derivative':
+                        value = float(listPIDStatus[2])
+                    return value
+                
+                # elif name in ('Resistance'):
+                #     value = float(self.askAndLog('HTRSET? %s' %(self.heaters[heaterName])).split(',')[0])
+                #     return value
+
+
+                elif name in ('Power range'):
+                    if heaterName == 'Sample':
+                        heater_ranges = {str(n): option for n, option in enumerate(['Off', '100 nW', '1 uW', '10 uW', '100 uW', '1 mW', '10 mW', '100 mW', '1 W'])}
+                        msg = self.askAndLog('RANGE? 0')
+                        value = heater_ranges[msg]
+                    else:
+                        value = bool(self.askAndLog('RANGE? %s' %self.heaters[heaterName]))
+                    return value
+                
+
+                elif name in ('Temperature Setpoint'):
+                    inputChannel = int(self.readValueFromOther(heaterName + ' Heater Input Channel'))
+                    self.setInKelvin(inputChannel)
+        
+                    self.askAndLog('SETP? %s' %(self.heaters[heaterName]))
+                    return value
+            
+            
+                elif name in ('Output Power', 'Manual Output Power'):
+                    self.setInWatts(heaterName)
+                    if name == 'Output Power':
+                        if heaterName == 'Sample':
+                            sCmd = 'HTR?'
+                        else:
+                            sCmd = 'AOUT? %s' %(self.heaters[heaterName])
+                        value = float(self.askAndLog(sCmd))
+                        powerRange = self.readValueFromOther(heaterName + ' Heater Power Range')
+                        
+                        value *= powerRange / 100
+                    elif name == 'Manual Output Power':
+                        self.askAndLog('MOUT? %s' %(self.heaters[heaterName]))
+                    return value
+                    
 
         except Error as e:
             # re-cast errors as a generic communication error
             msg = str(e)
             raise BaseDriver.CommunicationError(msg)
+        
+    def setInKelvin(self, inputChannel: int):
+        if not self.isInKelvin[inputChannel-1]:
+            sInputStatus = self.askAndLog('INTYPE? %s' %(str(inputChannel)))
+            sInputList = sInputStatus.split(',')
+            sInputList[-1] = '1' 
+            sCmd = 'INTYPE %s,%s' %(str(inputChannel), ','.join(sInputList))
+            self.writeAndLog(sCmd)
+            self.log('The preferred units for channel %d have been changed to K')
+            self.isInKelvin[inputChannel-1] = True
+        return
+    
+    def setInWatts(self, heaterName: str):
+        if not self.isInWatts[heaterName]:
+            sHtrSetStatus = self.askAndLog('HTRSET? %s' %(self.heaters[heaterName]))
+            sHtrSetList = sHtrSetStatus.split(',')
+            sHtrSetList[-1] = '2'
+            self.writeAndLog('HTRSET %s,%s' %(self.heaters[heaterName], ','.join(sHtrSetList)))
+            self.log('Output display style set to power mode')
+            self.isInWatts[heaterName] = True
+        return
     
     def uploadCurve(self, path, curveNumber, curveName, sensorSN, curveFormat,
                     setpointLimit, tempCoefficient):
