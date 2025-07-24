@@ -39,11 +39,11 @@ class Driver(VISA_Driver):
             # get selected parameter
             param = quant.name.split(' - ')[0]
             value = (param in self.dMeasParam)
-        elif quant.name in ('S11 - Value', 'S21 - Value', 'S12 - Value', 'S22 - Value'):
-            # read trace, return averaged data
-            data = self.readValueFromOther(quant.name.split(' - ')[0])
-            return np.mean(data['y'])
-        elif quant.name in ('S11', 'S21', 'S12', 'S22', 'a1/b1_2', 'a2/b2_1', 'A_0', 'B_0',):
+        # elif quant.name in ('S11 - Value', 'S21 - Value', 'S12 - Value', 'S22 - Value'):
+        #     # read trace, return averaged data
+        #     data = self.readValueFromOther(quant.name.split(' - ')[0])
+        #     return np.mean(data['y'])
+        elif re.fullmatch(r'S\d{2}', quant.name) or re.match(r'b\d/a\d_\d', quant.name) or re.match(r'[a|b]\d_\d', quant.name): # If it is S parameter, switc-term or power-wave
 
             # check if channel is on
             if quant.name not in self.dMeasParam:
@@ -82,77 +82,56 @@ class Driver(VISA_Driver):
                     if self.isStopped():
                         self.writeAndLog('*CLS;:INIT:CONT ON;')
                         return []
-                # self.writeAndLog('CALC:MEAS:FORM MLOG')
-                # # get data as float32, convert to numpy array
-                # # old parameter handing
-                # self.write(':FORM REAL,32;CALC:DATA? SDATA', bCheckError=False)
-                # sData = self.read(ignore_termination=True)
-                # if bWaitTrace and not bAverage:
-                #     self.writeAndLog(':INIT:CONT ON;')
-                # # strip header to find # of points
-                # i0 = sData.find(b'#')
-                # nDig = int(sData[i0+1:i0+2])
-                # nByte = int(sData[i0+2:i0+2+nDig])
-                # nData = int(nByte/4)
-                # nPts = int(nData/2)
-                # # get data to numpy array
-                # vData = np.frombuffer(sData[(i0+2+nDig):(i0+2+nDig+nByte)], 
-                #                     dtype='>f', count=nData)
                 
-                # # data is in I0,Q0,I1,Q1,I2,Q2,.. format, convert to complex
-                # mC = vData.reshape((nPts,2))
-                # vComplex = mC[:,0] + 1j*mC[:,1]
-                # vector = vComplex  
+                # if re.fullmatch(r'S\d{2}', quant.name) or re.match(r'b\d/a\d_\d'): # S-parameter or switch-term, i.e. ratioed measurements
 
-                # if quant.name in ('A_0', 'B_0',):
-                #     vector = np.abs(vector)
-                #     self.log(10*np.log10(np.max(vector)**2/1000))
+                # get data as float32, convert to numpy array
+                # old parameter handing
+                self.write(':FORM REAL,32;CALC:DATA? SDATA', bCheckError=False)
+                sData = self.read(ignore_termination=True)
+                if bWaitTrace and not bAverage:
+                    self.writeAndLog(':INIT:CONT ON;')
+                # strip header to find # of points
+                i0 = sData.find(b'#')
+                nDig = int(sData[i0+1:i0+2])
+                nByte = int(sData[i0+2:i0+2+nDig])
+                nData = int(nByte/4)
+                nPts = int(nData/2)
+                # get data to numpy array
+                vData = np.frombuffer(sData[(i0+2+nDig):(i0+2+nDig+nByte)], 
+                                    dtype='>f', count=nData)
                 
-                if quant.name in ('S11', 'S21', 'S12', 'S22', 'a1/b1_2', 'a2/b2_1'):
-                    self.writeAndLog('CALC:MEAS:FORM MLOG')
-                    # get data as float32, convert to numpy array
-                    # old parameter handing
-                    self.write(':FORM REAL,32;CALC:DATA? SDATA', bCheckError=False)
-                    sData = self.read(ignore_termination=True)
-                    if bWaitTrace and not bAverage:
-                        self.writeAndLog(':INIT:CONT ON;')
-                    # strip header to find # of points
-                    i0 = sData.find(b'#')
-                    nDig = int(sData[i0+1:i0+2])
-                    nByte = int(sData[i0+2:i0+2+nDig])
-                    nData = int(nByte/4)
-                    nPts = int(nData/2)
-                    # get data to numpy array
-                    vData = np.frombuffer(sData[(i0+2+nDig):(i0+2+nDig+nByte)], 
-                                        dtype='>f', count=nData)
+                # data is in I0,Q0,I1,Q1,I2,Q2,.. format, convert to complex
+                mC = vData.reshape((nPts,2))
+                vComplex = mC[:,0] + 1j*mC[:,1]
+                vector = vComplex
+                # if re.match(r'[a|b]\d_\d', quant.name):
+                #     vector /= np.sqrt(2)
+
+
+                # else:
+                #     # get data as float32, convert to numpy array
+                #     # old parameter handing
                     
-                    # data is in I0,Q0,I1,Q1,I2,Q2,.. format, convert to complex
-                    mC = vData.reshape((nPts,2))
-                    vComplex = mC[:,0] + 1j*mC[:,1]
-                    vector = vComplex
-                else:
-                    # get data as float32, convert to numpy array
-                    # old parameter handing
+                #     self.write(':CALC:MEAS:FORM MLOG')
+                #     self.write('CALC:MEAS:FORM:UNIT MLOG, DBM')
                     
-                    self.write(':CALC:MEAS:FORM MLOG')
-                    self.write('CALC:MEAS:FORM:UNIT MLOG, DBM')
+                #     self.write(':FORM REAL,32;CALC:DATA? FDATA', bCheckError=False)
                     
-                    self.write(':FORM REAL,32;CALC:DATA? FDATA', bCheckError=False)
-                    
-                    sData = self.read(ignore_termination=True)
-                    self.log(sData)
-                    if bWaitTrace and not bAverage:
-                        self.writeAndLog(':INIT:CONT ON;')
-                    # strip header to find # of pointsll 
-                    i0 = sData.find(b'#') # (nDig) (nByte) 
-                    nDig = int(sData[i0+1:i0+2])
-                    nByte = int(sData[i0+2:i0+2+nDig])
-                    nData = int(nByte/4)
-                    nPts = int(nData/2)
-                    # get data to numpy array
-                    vData = np.frombuffer(sData[(i0+2+nDig):(i0+2+nDig+nByte)], 
-                                        dtype='>f', count=nData)
-                    vector = vData
+                #     sData = self.read(ignore_termination=True)
+                #     self.log(sData)
+                #     if bWaitTrace and not bAverage:
+                #         self.writeAndLog(':INIT:CONT ON;')
+                #     # strip header to find # of pointsll 
+                #     i0 = sData.find(b'#') # (nDig) (nByte) 
+                #     nDig = int(sData[i0+1:i0+2])
+                #     nByte = int(sData[i0+2:i0+2+nDig])
+                #     nData = int(nByte/4)
+                #     nPts = int(nData/2)
+                #     # get data to numpy array
+                #     vData = np.frombuffer(sData[(i0+2+nDig):(i0+2+nDig+nByte)], 
+                #                         dtype='>f', count=nData)
+                #     vector = vData
                     
                 # get start/stop frequencies
                 centerFreq = self.readValueFromOther('Center frequency')
@@ -178,13 +157,13 @@ class Driver(VISA_Driver):
             # do nothing, return local value
             value = quant.getValue()
 
-        elif quant.name == 'X-axis values':
-            self.write('FORM ASC,0')
-            value = self.askAndLog('CALC:MEAS:X?')
-            value = value.split(',')
-            for n, val in enumerate(value):
-                value[n] = float(val)
-            value = np.array(value)
+        # elif quant.name == 'X-axis values':
+        #     self.write('FORM ASC,0')
+        #     value = self.askAndLog('CALC:MEAS:X?')
+        #     value = value.split(',')
+        #     for n, val in enumerate(value):
+        #         value[n] = float(val)
+        #     value = np.array(value)
 
         elif 'range' in quant.name and any(keyword in quant.name for keyword in ('Source', 'Receivers', 'Source2')):
 
@@ -311,7 +290,13 @@ class Driver(VISA_Driver):
                 self.writeAndLog("CALC:PAR:EXT '%s','%s'" % (newName, param))
                 # show on PNA screen
                 #iTrace = 1 + ['S11', 'S21', 'S12', 'S22'].index(param)
-                iTrace = 1 + ['S11', 'S21', 'S12', 'S22', 'a2/b2_1', 'a1/b1_2', 'A_0', 'B_0'].index(param)
+                iTrace = 1 + [
+                    'S11', 'S21', 'S12', 'S22', 
+                    'S13', 'S14', 'S23', 'S24', 
+                    'a2/b2_1', 'a1/b1_2', 'a4/b2_1', 'a3/b1_2', 
+                    'a1_1', 'a2_2', 'a3_1', 'a3_3', 'a4_2', 'a4_4',
+                    'b1_0', 'b1_1', 'b1_2', 'b2_0', 'b2_1', 'b2_2',
+                    ].index(param)
 #                sPrev = self.askAndLog('DISP:WIND:CAT?')
 #                if sPrev.find('EMPTY')>0:
 #                    # no previous traces

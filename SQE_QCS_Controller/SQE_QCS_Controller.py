@@ -69,18 +69,34 @@ class Driver(InstrumentDriver.InstrumentWorker):
             received_message = self.receive_data()
             #string = string(received_message)
             self.log(received_message)
+            # if received_message == "exp_sqz_1DNC_1DIG" or  received_message == "exp_sqz_2DNC_2DIG" or  received_message == "exp_calibration" or received_message == "exp_cluster_1DNC_1DIG" or received_message == "exp_cluster_2DNC_2DIG" or received_message == "exp_gain_single_pump" or received_message == "exp_gain_double_pump" or received_message == '3WM' or received_message == '4WM' or received_message == 'tripartite':
+            if received_message == ("exp_sqz_1DNC_1DIG" or "exp_sqz_2DNC_2DIG" or "exp_calibration" or "exp_cluster_1DNC_1DIG" or "exp_cluster_2DNC_2DIG" or "exp_gain_single_pump" or "exp_gain_double_pump" or '3WM' or '4WM' or 'tripartite' or 'exp_pi_pulse_calibration'):
+                return received_message
+            else:
+        
+                import ast
 
-            # Dividiamo la stringa in singoli numeri complessi
-            #numeri_come_stringa = string.split()
-            # Convertiamo ogni parte in un numero complesso
-            array_complesso = eval(received_message)
-            value = array_complesso
-            print(array_complesso)
-            #self.myLog(array_complesso)
+                # Inserisce la virgola tra i valori complessi usando split e join
+                received_message = received_message.strip()
+                if received_message.startswith("[") and received_message.endswith("]"):
+                    # Rimuove le parentesi per lavorare sull'interno
+                    inner = received_message[1:-1]
+                    # Aggiunge le virgole tra i valori
+                    inner_fixed = ", ".join(inner.split())
+                    received_message_fixed = f"[{inner_fixed}]"
+                    array_complesso = ast.literal_eval(received_message_fixed)
+                else:
+                    array_complesso = ast.literal_eval(received_message)
 
-            #value = float(received_message)
-            #value = json.loads(received_message.decode())   # json to convert message to a array
-            return value
+                # print(f"Received string: {received_message}")
+                # array_complesso = eval(received_message)
+                value = array_complesso
+                # print(array_complesso)
+                #self.myLog(array_complesso)
+
+                #value = float(received_message)
+                #value = json.loads(received_message.decode())   # json to convert message to a array
+                return value
         except Exception as e:
             print(f"Error in performGetValue: {e}", file=sys.stderr)
             raise

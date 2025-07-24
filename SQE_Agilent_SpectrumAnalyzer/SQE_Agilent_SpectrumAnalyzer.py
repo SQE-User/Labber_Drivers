@@ -8,6 +8,7 @@ import numpy as np
 class Error(Exception):
     pass
 
+
 class Driver(VISA_Driver):
     """ This class implements the Agilen 4470 Spectrum Analyzer driver"""
 
@@ -31,6 +32,15 @@ class Driver(VISA_Driver):
             # turn on continous acquisition if not waiting     
             if value == False:
                 self.writeAndLog(':INIT:CONT ON;')
+
+        elif quant.name in ('Max hold',):
+            if value:
+                command = ":TRAC:MODE MAXH "
+            else:
+                command = ":TRAC:MODE WRIT "
+            self.writeAndLog(command)
+
+
         else:
             # run standard VISA case 
             value = VISA_Driver.performSetValue(self, quant, value, sweepRate, options)
@@ -108,6 +118,10 @@ class Driver(VISA_Driver):
                                                dt=(stopFreq-startFreq)/(nPts-1))
         elif quant.name in ('Wait for new trace',):
             # do nothing, return local value
+            value = quant.getValue()
+        elif quant.name in ('Max hold',):
+            command = ":SENS:OBW:MAXH ON?"  # TRAC:MODE?
+            self.writeAndLog(command)
             value = quant.getValue()
         else:
             # for all other cases, call VISA driver

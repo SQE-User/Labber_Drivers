@@ -22,11 +22,14 @@ class Driver(VISA_Driver):
         try:
            # start by calling the generic VISA open to make sure we have a connection
            VISA_Driver.performOpen(self, options=options)
+           
 
         except Error as e:
             # re-cast errors as a generic communication error
             msg = str(e)
             raise BaseDriver.CommunicationError(msg)
+        
+        
 
     def performSetValue(self, quant, value, sweepRate=0.0, options={}):
         """Perform the Set Value instrument operation."""
@@ -271,8 +274,18 @@ class Driver(VISA_Driver):
                         value = int(listRangeStatus[3])
                     return value
                 
-                elif name in ('Rapid temperature'):
+                elif name in ('Quick Temperature'):
+                    self.writeAndLog('SCAN %s,1' %(int(channel)))
                     sCmd3 = 'RDGK? %s' %(int(channel))
+                    sTempStatus = self.askAndLog(sCmd3)
+                    self.log('Command sent: ' + sCmd3)
+                    self.log('Answer received: '+ sTempStatus)
+                    value = float(sTempStatus)
+                    return value
+                
+                elif name in ('Quick Resistance'):
+                    self.writeAndLog('SCAN %s,1' %(int(channel)))
+                    sCmd3 = 'RDGR? %s' %(int(channel))
                     sTempStatus = self.askAndLog(sCmd3)
                     self.log('Command sent: ' + sCmd3)
                     self.log('Answer received: '+ sTempStatus)
@@ -283,7 +296,7 @@ class Driver(VISA_Driver):
                     
                     self.log(f'Measuring {quant.name} with the instrument')
                     # Send command to switch to channel
-                    sCmd1 = 'SCAN %s,0' %(str(channel))
+                    sCmd1 = 'SCAN %s,1' %(str(channel))
                     self.writeAndLog(sCmd1)
                     # Send command to wait until settling of channel - for Model 370, this requires a workaorund
                     model = self.getModel()
